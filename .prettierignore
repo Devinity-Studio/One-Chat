@@ -1,0 +1,5 @@
+# Ignore files Prettier shouldn't touch in this repo
+docs/
+*.zip
+*.pdf
+node_modules/

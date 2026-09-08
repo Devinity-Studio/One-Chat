@@ -18,6 +18,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Check formatting (Prettier)
+        run: npx --yes prettier@3 --check "src/**/*.html"
+
       - name: Lint HTML (HTMLHint)
         run: npx --yes htmlhint@1 "src/**/*.html"
 
