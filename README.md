@@ -51,6 +51,146 @@ Facebook ─┘   (?channel=&providerId=)        └──> Reply APIs ของ
 - **Auto-touch trigger** — insert message แล้วอัปเดต `last_message_at` / `unread_count` อัตโนมัติ
 - **Analytics views** — `v_provider_dashboard` (ต่อ provider) และ `v_channel_summary` (ต่อช่องทาง)
 
+## 🗄️ Database Schema
+
+อ้างอิงจาก `src/supabase-schema.sql` — ทุกตารางใช้ `uuid` primary key (`gen_random_uuid()`) และ timestamp เป็น `timestamptz`
+
+### Core Identity
+
+#### `providers` — บัญชีแชทแต่ละ Brand (หลายบัญชีต่อแพลตฟอร์ม)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `name` | text | ชื่อ brand เช่น `'Brand A · คาเฟ่กรีนลีฟ'` |
+| `channel_type` | text | `line` \| `telegram` \| `facebook` (check constraint) |
+| `external_account_id` | text | LINE Channel ID / Telegram bot username / Facebook Page ID |
+| `credentials` | jsonb | credential ของแพลตฟอร์ม: `{channel_secret, access_token}` / `{bot_token}` / `{page_access_token, app_secret, verify_token}` |
+| `color_hex` | text | สีแท็กแสดงใน UI |
+| `api_status` | text | `connected` \| `token_expired` \| `error` |
+| `created_at` | timestamptz | |
+
+> Unique: `(channel_type, external_account_id)` — ป้องกันการ connect บัญชีเดิมซ้ำ
+
+#### `agents` — แอดมิน/เจ้าหน้าที่
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `auth_user_id` | uuid → `auth.users` | ผูกกับ Supabase Auth (cascade delete) |
+| `display_name` | text | |
+| `email` | text unique | |
+| `role` | text | `admin` \| `agent` |
+
+#### `agent_providers` — สิทธิ์การดูแล (M2M)
+
+PK `(agent_id, provider_id)` — agent 1 คนดูแลได้หลาย provider ข้ามช่องทาง (ใช้เป็นเงื่อนไขของ RLS)
+
+#### `customers` — ผู้ติดตามต่อ Provider
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `provider_id` | uuid FK cascade | |
+| `external_user_id` | text | LINE `userId` (Uxxx…) / Telegram `chat_id` / Facebook PSID |
+| `username` | text | Telegram `@username` (ถ้ามี) |
+| `display_name` | text | |
+| `picture_url` / `phone` | text | |
+| `joined_at` | timestamptz | |
+
+> Unique: `(provider_id, external_user_id)` — index เพิ่มบน `provider_id`
+
+### Chat Domain
+
+#### `conversations` — สถานะการสนทนาต่อ 1 ลูกค้า
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `customer_id` / `provider_id` | uuid FK cascade | |
+| `status` | text | `unassigned` \| `in_progress` \| `follow_up` \| `done` |
+| `mode` | text | `bot` (auto-responder ทำงาน) \| `manual` (แอดมินตอบเอง) |
+| `assignee_id` | uuid → `agents` | |
+| `unread_count` | int | นับข้อความจาก customer ที่ยังไม่อ่าน |
+| `last_message_at` | timestamptz | ใช้ sort ใน inbox |
+| `notes` | text | |
+
+> Indexes: `provider_id`, `assignee_id`, `status`
+
+#### `messages` — ข้อความในแชท
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `conversation_id` | uuid FK cascade | |
+| `sender_type` | text | `customer` \| `agent` \| `bot` \| `system` |
+| `sender_id` | uuid → `agents` | null ถ้าเป็น customer/bot/system |
+| `message_type` | text | `text` \| `image` \| `sticker` \| `flex` \| `video` \| `file` \| `coupon` |
+| `content` | text | ข้อความ หรือ JSON ของ Flex Message |
+| `media_url` | text | |
+| `external_message_id` | text | id จากแพลตฟอร์มต้นทาง (LINE message id / Telegram message_id / FB `mid`) ใช้ dedupe |
+
+> Index: `(conversation_id, created_at)` · **Trigger** `trg_touch_conversation` — insert ข้อความแล้วอัปเดต `last_message_at` + `unread_count` อัตโนมัติ
+
+### Content & Campaign
+
+#### `templates` — Template กลาง
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `type` | text | `rich_menu` \| `welcome_message` \| `auto_response` \| `canned_response` \| `coupon` \| `flex_broadcast` |
+| `name` | text | |
+| `payload` | jsonb | เนื้อหาของ template (Flex JSON / ข้อความ / เงื่อนไข) |
+| `keyword` | text | ใช้เมื่อ `type = auto_response` (Exact/Partial match เก็บใน payload) |
+| `shortcode` | text | ใช้เมื่อ `type = canned_response` เช่น `/bank`, `/ship` |
+| `created_by` | uuid → `agents` | |
+
+#### `template_providers` — Apply template ไหนให้ provider ใดบ้าง (M2M)
+
+PK `(template_id, provider_id)` — auto-responder ใช้ join ตารางนี้หา keyword ต่อ provider
+
+#### `broadcasts` — แคมเปญส่งข้อความจำนวนมาก
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `template_id` | uuid → `templates` | |
+| `name` | text | |
+| `status` | text | `draft` \| `scheduled` \| `sending` \| `sent` \| `failed` |
+| `scheduled_at` / `sent_at` | timestamptz | |
+| `target_reach` | int | จำนวนผู้รับเป้าหมาย |
+
+#### `broadcast_providers` — ผลลัพธ์ต่อ Provider
+
+PK `(broadcast_id, provider_id)` + สถิติ `reach_count`, `open_count`, `click_count`
+
+### CDP / Tags
+
+#### `tags` & `customer_tags`
+
+- `tags` — `label` (unique เช่น `#VIP`, `#รอเสนอราคา`), `color_bg`, `color_text`
+- `customer_tags` — PK `(customer_id, tag_id)`, `tagged_at` — ใช้ segment audience สำหรับ broadcast
+
+### Views & Security
+
+**Views**
+
+| View | คำอธิบาย |
+|------|----------|
+| `v_provider_dashboard` | สรุปต่อ provider: total_customers, unread_conversations, unassigned_conversations |
+| `v_channel_summary` | สรุปรวมแยกตาม `channel_type` (LINE / Telegram / Facebook) |
+
+**Row Level Security** — เปิดบน `conversations`, `messages`, `customers`
+
+| Policy | ผลลัพธ์ |
+|--------|----------|
+| agents see only their assigned providers | agent (ผ่าน `agent_providers`) เห็นเฉพาะ provider ที่ตัวเองดูแล — `admin` เห็นทุก provider |
+| agents see messages of accessible conversations | ข้อความถูกจำกัดต่อจาก RLS ของ `conversations` |
+| agents see customers of accessible providers | ข้อมูลลูกค้าจำกัดตาม provider ที่ดูแล |
+
+**Realtime** — `messages` และ `conversations` ถูกเพิ่มใน publication `supabase_realtime` เพื่อให้หน้าจอ Live Chat subscribe ได้ทันที
+
 ## 🚀 Setup
 
 ### 1. Database (Supabase)
