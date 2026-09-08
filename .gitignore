@@ -1,0 +1,41 @@
+# ---------- OS junk ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ---------- Editor / IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- Logs & temp ----------
+*.log
+*.tmp
+~$*
+*.bak
+
+# ---------- Secrets / env ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Dependencies / build ----------
+node_modules/
+dist/
+build/
+
+# ---------- Large binaries (keep docs/ archives intentional) ----------
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.iso
+*.dmg
+*.exe
+*.msi
+# ห้ามเผลอ commit ไฟล์ zip ชั่วคราวนอก docs/
+*.zip
+!docs/*.zip
