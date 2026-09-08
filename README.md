@@ -228,3 +228,17 @@ PK `(broadcast_id, provider_id)` + สถิติ `reach_count`, `open_count`, 
 | `docs/line-oa-hub-chat-design.pdf` | Design mockups ของ UI ทุกหน้าจอ (ภาพประกอบ) |
 | `docs/chat-center-source-snapshot.zip` | Snapshot ซอร์สโค้ดชุดปัจจุบัน — เนื้อหาซ้ำกับ `src/` เก็บไว้อ้างอิงเวอร์ชัน |
 | `docs/onechat-apps-script-legacy.zip` | เวอร์ชันแรกของระบบ (Main/Config/SheetDB/LineChannel/... แบบทำงานบน Google Sheet + AI Reply) เก็บไว้เป็นประวัติ |
+
+## 🔧 Git Hooks (pre-commit)
+
+ไฟล์ HTML ที่ staged จะถูกตรวจด้วย **HTMLHint** + **Prettier** ก่อนทุกครั้งที่ commit (ชุดเดียวกับ CI)
+
+เปิดใช้งานครั้งเดียวต่อ repo clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+> ต้องมี `npx` (Node.js) — รันครั้งแรกจะดาวน์โหลดเครื่องมือให้อัตโนมัติ · ส่วน SQL ตรวจใน CI (sqlfluff)
+
+ถ้า hook ตรวจไม่ผ่าน แก้ด้วย `npx prettier@3 --write <ไฟล์>` แล้ว `git add` ใหม่
