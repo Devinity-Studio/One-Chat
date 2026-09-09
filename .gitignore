@@ -26,6 +26,11 @@ $RECYCLE.BIN/
 node_modules/
 dist/
 build/
+.next/
+out/
+coverage/
+apps/web/.next/
+apps/web/node_modules/
 
 # ---------- Large binaries (keep docs/ archives intentional) ----------
 *.7z
